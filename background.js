@@ -10,13 +10,43 @@
  *   script to the side panel port.
  * - Track picker state per tab so the side panel reflects the correct status
  *   when it connects.
+ *
+ * Tab state is persisted in chrome.storage.session so results survive service
+ * worker restarts within the same browser session.
  */
-
-// tabId → { active: boolean, results: object[] }
-const tabState = new Map();
 
 // Long-lived connection from the side panel
 let panelPort = null;
+
+// ─── Tab state helpers (chrome.storage.session) ───────────────────────────────
+
+const TAB_STATE_KEY = "tabStates";
+
+async function getTabState(tabId) {
+  const data = await chrome.storage.session.get(TAB_STATE_KEY);
+  const all  = data[TAB_STATE_KEY] || {};
+  return all[String(tabId)] || { active: false, results: [] };
+}
+
+async function setTabState(tabId, patch) {
+  const data     = await chrome.storage.session.get(TAB_STATE_KEY);
+  const all      = data[TAB_STATE_KEY] || {};
+  const existing = all[String(tabId)] || { active: false, results: [] };
+  all[String(tabId)] = { ...existing, ...patch };
+  await chrome.storage.session.set({ [TAB_STATE_KEY]: all });
+}
+
+async function deleteTabState(tabId) {
+  const data = await chrome.storage.session.get(TAB_STATE_KEY);
+  const all  = data[TAB_STATE_KEY] || {};
+  delete all[String(tabId)];
+  await chrome.storage.session.set({ [TAB_STATE_KEY]: all });
+}
+
+async function getAllTabStates() {
+  const data = await chrome.storage.session.get(TAB_STATE_KEY);
+  return data[TAB_STATE_KEY] || {};
+}
 
 // ─── Open side panel when toolbar icon is clicked ─────────────────────────────
 
@@ -36,9 +66,9 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 
   // When the panel connects, send current state for the active tab
-  getCurrentTab().then((tab) => {
+  getCurrentTab().then(async (tab) => {
     if (!tab) return;
-    const state = tabState.get(tab.id) || { active: false, results: [] };
+    const state = await getTabState(tab.id);
     port.postMessage({ type: "TAB_STATE", payload: state });
   });
 });
@@ -51,12 +81,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
     // ── From side panel → content script ─────────────────────────────────
     case "ACTIVATE_PICKER": {
-      getCurrentTab().then((tab) => {
+      getCurrentTab().then(async (tab) => {
         if (!tab) return sendResponse({ ok: false, error: "No active tab" });
-        setTabState(tab.id, { active: true });
+        await setTabState(tab.id, { active: true });
         chrome.tabs.sendMessage(tab.id, { type: "ACTIVATE_PICKER" }, (resp) => {
           if (chrome.runtime.lastError) {
-            // Content script not yet ready — inject it, then retry
             chrome.scripting
               .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
               .then(() => chrome.tabs.sendMessage(tab.id, { type: "ACTIVATE_PICKER" }))
@@ -69,19 +98,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     case "DEACTIVATE_PICKER": {
-      // Prefer the tab actually marked active in our state map; fall back to
-      // the current active tab so we don't miss the right tab.
-      const activeTabEntry = [...tabState.entries()].find(([, s]) => s.active);
+      getCurrentTab().then(async (tab) => {
+        const allStates   = await getAllTabStates();
+        const activeEntry = Object.entries(allStates).find(([, s]) => s.active);
+        const targetTabId = activeEntry ? Number(activeEntry[0]) : tab?.id;
 
-      getCurrentTab().then((tab) => {
-        const targetTabId = activeTabEntry ? activeTabEntry[0] : tab?.id;
         if (!targetTabId) return sendResponse({ ok: false, error: "No active tab" });
 
-        setTabState(targetTabId, { active: false });
+        await setTabState(targetTabId, { active: false });
 
         chrome.tabs.sendMessage(targetTabId, { type: "DEACTIVATE_PICKER" }, (resp) => {
           if (chrome.runtime.lastError) {
-            // Content script unreachable — force-clean the page DOM directly.
             chrome.scripting
               .executeScript({
                 target: { tabId: targetTabId },
@@ -100,17 +127,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     case "GET_TAB_STATE": {
-      getCurrentTab().then((tab) => {
+      getCurrentTab().then(async (tab) => {
         if (!tab) return sendResponse({ active: false, results: [] });
-        sendResponse(tabState.get(tab.id) || { active: false, results: [] });
+        sendResponse(await getTabState(tab.id));
       });
       return true;
     }
 
     case "CLEAR_RESULTS": {
-      getCurrentTab().then((tab) => {
+      getCurrentTab().then(async (tab) => {
         if (!tab) return;
-        setTabState(tab.id, { results: [] });
+        await setTabState(tab.id, { results: [] });
         sendResponse({ ok: true });
       });
       return true;
@@ -144,7 +171,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!tab) return sendResponse({ ok: false, error: "No active tab", results: [] });
         chrome.tabs.sendMessage(tab.id, { type: "SCAN_PAGE", attrName: msg.attrName }, (resp) => {
           if (chrome.runtime.lastError) {
-            // Content script not yet injected — inject it then retry once
             chrome.scripting
               .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
               .then(() =>
@@ -192,24 +218,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // ── From content script → side panel ─────────────────────────────────
     case "SELECTOR_RESULT": {
-      if (tabId !== null) {
-        const state = tabState.get(tabId) || { active: true, results: [] };
-        const results = [msg.payload, ...state.results].slice(0, 50); // cap history
-        tabState.set(tabId, { ...state, results });
-      }
-      if (panelPort) {
-        panelPort.postMessage({ type: "SELECTOR_RESULT", payload: msg.payload });
-      }
+      (async () => {
+        if (tabId !== null) {
+          const state   = await getTabState(tabId);
+          const results = [msg.payload, ...state.results].slice(0, 50);
+          await setTabState(tabId, { ...state, results });
+        }
+        if (panelPort) {
+          panelPort.postMessage({ type: "SELECTOR_RESULT", payload: msg.payload });
+        }
+      })();
       break;
     }
 
     case "PICKER_CANCELLED": {
-      if (tabId !== null) {
-        setTabState(tabId, { active: false });
-      }
-      if (panelPort) {
-        panelPort.postMessage({ type: "PICKER_CANCELLED" });
-      }
+      (async () => {
+        if (tabId !== null) {
+          await setTabState(tabId, { active: false });
+        }
+        if (panelPort) {
+          panelPort.postMessage({ type: "PICKER_CANCELLED" });
+        }
+      })();
       break;
     }
 
@@ -220,24 +250,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ─── Sync picker state when the active tab changes ───────────────────────────
 
-chrome.tabs.onActivated.addListener(({ tabId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   if (!panelPort) return;
-  const state = tabState.get(tabId) || { active: false, results: [] };
+  const state = await getTabState(tabId);
   panelPort.postMessage({ type: "TAB_STATE", payload: state });
 });
 
 // ─── Clean up state when a tab is closed ─────────────────────────────────────
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  tabState.delete(tabId);
+  deleteTabState(tabId);
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function setTabState(tabId, patch) {
-  const existing = tabState.get(tabId) || { active: false, results: [] };
-  tabState.set(tabId, { ...existing, ...patch });
-}
 
 function getCurrentTab() {
   return chrome.tabs
