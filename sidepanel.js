@@ -30,6 +30,17 @@ const savedEmptyEl = document.getElementById("saved-empty");
 const btnClearDone = document.getElementById("btn-clear-done");
 const tplSavedItem = document.getElementById("tpl-saved-item");
 
+// Discover refs
+const btnDiscover           = document.getElementById("btn-discover");
+const btnDiscoverLabel      = document.getElementById("btn-discover-label");
+const discoverResultsSection = document.getElementById("discover-results-section");
+const discoverResultsCount  = document.getElementById("discover-results-count");
+const discoverList          = document.getElementById("discover-list");
+const btnClearDiscover      = document.getElementById("btn-clear-discover");
+const discoverEmptyEl       = document.getElementById("discover-empty");
+const scanDetailDivider     = document.getElementById("scan-detail-divider");
+const scanControlsWrap      = document.getElementById("scan-controls-wrap");
+
 // Scan refs
 const scanAttrInput      = document.getElementById("scan-attr-input");
 const btnScan            = document.getElementById("btn-scan");
@@ -160,6 +171,92 @@ function clearHistoryUI() {
   btnClear.disabled = true;
 }
 
+// ─── Attribute Discovery ──────────────────────────────────────────────────────
+
+btnDiscover.addEventListener("click", () => {
+  btnDiscover.disabled = true;
+  btnDiscoverLabel.textContent = "Discovering…";
+
+  chrome.runtime.sendMessage({ type: "DISCOVER_ATTRIBUTES" }, (resp) => {
+    btnDiscover.disabled = false;
+    btnDiscoverLabel.textContent = "Discover Attributes";
+
+    if (chrome.runtime.lastError || !resp || !resp.ok) {
+      renderDiscoveryResults([]);
+      return;
+    }
+    renderDiscoveryResults(resp.attrs || []);
+  });
+});
+
+btnClearDiscover.addEventListener("click", () => {
+  discoverList.innerHTML = "";
+  discoverResultsSection.hidden = true;
+  discoverEmptyEl.style.display = "";
+  // Also hide the scan detail section
+  scanDetailDivider.hidden = true;
+  scanControlsWrap.hidden = true;
+  scanResultsSection.hidden = true;
+  scanEmptyEl.hidden = true;
+  scanSaveRefreshers.clear();
+});
+
+function renderDiscoveryResults(attrs) {
+  discoverList.innerHTML = "";
+
+  const n = attrs.length;
+  discoverResultsCount.textContent = n === 0
+    ? "No stable attributes found"
+    : `${n} attribute${n === 1 ? "" : "s"} found`;
+
+  discoverResultsSection.hidden = false;
+  discoverEmptyEl.style.display = "none";
+
+  attrs.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "discover-row";
+    row.title = `Click to scan values for ${item.attrName}`;
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "discover-attr-name";
+    nameEl.textContent = item.attrName;
+
+    const countEl = document.createElement("span");
+    countEl.className = "discover-count-badge";
+    countEl.textContent = `${item.valueCount} value${item.valueCount === 1 ? "" : "s"}`;
+
+    const scanBtn = document.createElement("button");
+    scanBtn.className = "btn-discover-scan";
+    scanBtn.title = `Scan values for ${item.attrName}`;
+    scanBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>`;
+
+    const triggerDetailScan = () => {
+      // Mark this row as active
+      discoverList.querySelectorAll(".discover-row").forEach((r) => r.classList.remove("discover-row-active"));
+      row.classList.add("discover-row-active");
+
+      // Reveal and populate the detail scan section
+      scanDetailDivider.hidden = false;
+      scanControlsWrap.hidden = false;
+      scanAttrInput.value = item.attrName;
+
+      // Auto-trigger the scan
+      btnScan.click();
+
+      // Scroll detail into view
+      scanDetailDivider.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    };
+
+    row.addEventListener("click", triggerDetailScan);
+    scanBtn.addEventListener("click", (e) => { e.stopPropagation(); triggerDetailScan(); });
+
+    row.appendChild(nameEl);
+    row.appendChild(countEl);
+    row.appendChild(scanBtn);
+    discoverList.appendChild(row);
+  });
+}
+
 // ─── Page Scanner ─────────────────────────────────────────────────────────────
 
 let scanSaveRefreshers = new Set();
@@ -173,7 +270,7 @@ btnScan.addEventListener("click", () => {
 
   chrome.runtime.sendMessage({ type: "SCAN_PAGE", attrName }, (resp) => {
     btnScan.disabled = false;
-    btnScanLabel.textContent = "Scan Page";
+    btnScanLabel.textContent = "Scan Values";
 
     if (chrome.runtime.lastError || !resp || !resp.ok) {
       renderScanResults([], attrName);
@@ -187,7 +284,7 @@ btnClearScan.addEventListener("click", () => {
   scanSaveRefreshers.clear();
   scanList.innerHTML = "";
   scanResultsSection.hidden = true;
-  scanEmptyEl.style.display = "";
+  scanEmptyEl.hidden = true;
 });
 
 function renderScanResults(results, attrName) {
@@ -200,7 +297,7 @@ function renderScanResults(results, attrName) {
     : `${n} unique value${n === 1 ? "" : "s"} found`;
 
   scanResultsSection.hidden = false;
-  scanEmptyEl.style.display = "none";
+  scanEmptyEl.hidden = true;
 
   results.forEach((item) => {
     const row = document.createElement("div");

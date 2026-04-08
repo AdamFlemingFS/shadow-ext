@@ -503,6 +503,42 @@
     return Array.from(seen.values());
   }
 
+  /**
+   * Scans the entire page (light DOM + all open shadow roots) and returns every
+   * attribute name that is considered a stable FullStory selector candidate:
+   *   - any data-* attribute
+   *   - aria-label, aria-labelledby, aria-describedby
+   *   - role
+   *
+   * Returns an array of { attrName, valueCount } sorted descending by valueCount.
+   */
+  function discoverStableAttributes() {
+    const QUALIFIED_NAMED = new Set([
+      "aria-label",
+      "aria-labelledby",
+      "aria-describedby",
+      "role",
+    ]);
+
+    // attrName → Set of distinct values
+    const attrMap = new Map();
+
+    for (const el of walkDOMDeep(document)) {
+      for (const attr of el.attributes) {
+        const name = attr.name;
+        if (!name.startsWith("data-") && !QUALIFIED_NAMED.has(name)) continue;
+        const val = attr.value.trim();
+        if (!val) continue;
+        if (!attrMap.has(name)) attrMap.set(name, new Set());
+        attrMap.get(name).add(val);
+      }
+    }
+
+    return Array.from(attrMap.entries())
+      .map(([attrName, values]) => ({ attrName, valueCount: values.size }))
+      .sort((a, b) => b.valueCount - a.valueCount);
+  }
+
   // ─── Message Bus ──────────────────────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -514,6 +550,9 @@
       sendResponse({ ok: true });
     } else if (msg.type === "PING") {
       sendResponse({ ok: true, active: pickerActive });
+    } else if (msg.type === "DISCOVER_ATTRIBUTES") {
+      const attrs = discoverStableAttributes();
+      sendResponse({ ok: true, attrs });
     } else if (msg.type === "SCAN_PAGE") {
       const attrName = (msg.attrName || "data-test-id").trim();
       const results = attrName ? scanPageForAttribute(attrName) : [];

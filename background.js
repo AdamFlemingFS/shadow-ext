@@ -116,6 +116,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
 
+    case "DISCOVER_ATTRIBUTES": {
+      getCurrentTab().then((tab) => {
+        if (!tab) return sendResponse({ ok: false, error: "No active tab", attrs: [] });
+        chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_ATTRIBUTES" }, (resp) => {
+          if (chrome.runtime.lastError) {
+            chrome.scripting
+              .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
+              .then(() =>
+                chrome.tabs.sendMessage(
+                  tab.id,
+                  { type: "DISCOVER_ATTRIBUTES" },
+                  (r) => sendResponse(r || { ok: false, attrs: [] })
+                )
+              )
+              .catch((err) => sendResponse({ ok: false, error: String(err), attrs: [] }));
+            return;
+          }
+          sendResponse(resp || { ok: false, attrs: [] });
+        });
+      });
+      return true;
+    }
+
     case "SCAN_PAGE": {
       getCurrentTab().then((tab) => {
         if (!tab) return sendResponse({ ok: false, error: "No active tab", results: [] });

@@ -99,13 +99,51 @@
   <!-- ── Tab 3: Scan ──────────────────────────────────────────────────────── -->
   <div id="tab-scan" class="tab-panel">
 
+    <!-- ── Phase 1: Discover stable attributes on the page ── -->
+    <div class="discover-controls">
+      <button id="btn-discover" class="btn btn-primary btn-discover">
+        <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
+          <line x1="11" y1="8" x2="11" y2="14"/>
+          <line x1="8" y1="11" x2="14" y2="11"/>
+        </svg>
+        <span id="btn-discover-label">Discover Attributes</span>
+      </button>
+    </div>
+
+    <!-- Discovery results (hidden until discovery has run) -->
+    <div id="discover-results-section" class="discover-results-section" hidden>
+      <div class="discover-results-header">
+        <span id="discover-results-count" class="discover-results-count"></span>
+        <button id="btn-clear-discover" class="btn-text-muted">Clear</button>
+      </div>
+      <div id="discover-list" class="discover-list"></div>
+    </div>
+
+    <!-- Discovery empty state -->
+    <div id="discover-empty" class="empty-state discover-empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="M21 21l-4.35-4.35"/>
+        <line x1="11" y1="8" x2="11" y2="14"/>
+        <line x1="8" y1="11" x2="14" y2="11"/>
+      </svg>
+      <p class="empty-title">No attributes found yet</p>
+      <p class="empty-sub">Click Discover Attributes to snapshot the page and find stable selectors like <code>data-*</code> and <code>aria-label</code>.</p>
+    </div>
+
+    <!-- ── Phase 2: Scan detail for a specific attribute ── -->
+    <div class="scan-detail-divider" id="scan-detail-divider" hidden>
+      <span class="scan-detail-divider-label">Scan Detail</span>
+    </div>
+
     <!-- Scan controls -->
-    <div class="scan-controls">
+    <div class="scan-controls" id="scan-controls-wrap" hidden>
       <input
         id="scan-attr-input"
         class="scan-attr-input"
         type="text"
-        value="data-test-id"
         placeholder="attribute name"
         autocomplete="off"
         spellcheck="false"
@@ -116,7 +154,7 @@
           <circle cx="11" cy="11" r="8"/>
           <path d="M21 21l-4.35-4.35"/>
         </svg>
-        <span id="btn-scan-label">Scan Page</span>
+        <span id="btn-scan-label">Scan Values</span>
       </button>
     </div>
 
@@ -129,16 +167,9 @@
       <div id="scan-list" class="scan-list"></div>
     </div>
 
-    <!-- Empty state -->
-    <div id="scan-empty" class="empty-state">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-        <circle cx="11" cy="11" r="8"/>
-        <path d="M21 21l-4.35-4.35"/>
-        <line x1="11" y1="8" x2="11" y2="14"/>
-        <line x1="8" y1="11" x2="14" y2="11"/>
-      </svg>
-      <p class="empty-title">No scan run yet</p>
-      <p class="empty-sub">Enter an attribute name above and click Scan Page to discover all matching elements across light and shadow DOM.</p>
+    <!-- Scan empty state (shown while no detail scan has run) -->
+    <div id="scan-empty" class="empty-state scan-detail-empty" hidden>
+      <p class="empty-sub">Select an attribute above to see its values.</p>
     </div>
 
   </div>

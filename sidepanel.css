@@ -1024,3 +1024,173 @@ details[open] > .segments-container {
   opacity: 0.3;
   cursor: not-allowed;
 }
+
+/* ── Discover controls ───────────────────────────────────────────────────── */
+.discover-controls {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn-discover {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Discover results section ────────────────────────────────────────────── */
+.discover-results-section {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  max-height: 220px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.discover-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.discover-results-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Discover list (scrollable) ──────────────────────────────────────────── */
+.discover-list {
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.discover-list::-webkit-scrollbar { width: 4px; }
+.discover-list::-webkit-scrollbar-track { background: transparent; }
+.discover-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Discover attribute row ──────────────────────────────────────────────── */
+.discover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  min-height: 34px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.discover-row:last-child {
+  border-bottom: none;
+}
+
+.discover-row:hover {
+  background: var(--bg3);
+}
+
+.discover-row:hover .btn-discover-scan {
+  opacity: 1;
+}
+
+.discover-row-active {
+  background: var(--accent-glow);
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+}
+
+.discover-attr-name {
+  flex: 1;
+  min-width: 0;
+  font-family: "Fira Code", "Cascadia Code", "JetBrains Mono", "SF Mono", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discover-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-discover-scan {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: background 0.1s, color 0.1s, border-color 0.1s, opacity 0.1s;
+}
+
+.btn-discover-scan:hover {
+  background: var(--accent-glow);
+  border-color: rgba(91, 91, 214, 0.3);
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* ── Discover empty state (compact, non-expanding) ──────────────────────── */
+.discover-empty-state {
+  flex: 0 0 auto;
+  padding: 20px 14px;
+}
+
+/* ── Scan detail divider ─────────────────────────────────────────────────── */
+.scan-detail-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  height: 28px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.scan-detail-divider-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Scan detail empty state (compact inline) ────────────────────────────── */
+.scan-detail-empty {
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+
+.scan-detail-empty .empty-sub {
+  text-align: center;
+  color: var(--text-muted);
+}
