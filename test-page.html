@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shadow DOM Selector — Test Page</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 32px;
+      line-height: 1.6;
+    }
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #f8fafc; }
+    h2 { font-size: 16px; font-weight: 600; margin: 32px 0 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    p  { color: #94a3b8; margin-bottom: 24px; font-size: 14px; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 600; background: #6366f1; color: #fff;
+      margin-right: 6px;
+    }
+    .scenario {
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background: #1e293b;
+    }
+    .scenario-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Shadow DOM Selector — Test Page</h1>
+<p>Load the extension, click "Pick Element", then click any highlighted element below. Verify the selector output in the popup.</p>
+
+<h2>Scenario 1 — Regular DOM (baseline)</h2>
+<div class="scenario">
+  <div class="scenario-title">No shadow DOM — standard elements</div>
+  <button id="regular-btn" data-action="submit" class="primary-button">Submit Button</button>
+  &nbsp;
+  <a href="#" class="nav-link" data-section="home">Home Link</a>
+  &nbsp;
+  <input type="text" name="search" placeholder="Search input" aria-label="Search" />
+</div>
+
+<h2>Scenario 2 — Single Shadow Root</h2>
+<div class="scenario">
+  <div class="scenario-title">Custom element with one shadow root</div>
+  <my-button data-component="my-button"></my-button>
+</div>
+
+<h2>Scenario 3 — Nested Shadow Roots (2 levels)</h2>
+<div class="scenario">
+  <div class="scenario-title">shadow host → shadow host → target element</div>
+  <my-card data-component="my-card"></my-card>
+</div>
+
+<h2>Scenario 4 — Deeply nested (3 levels)</h2>
+<div class="scenario">
+  <div class="scenario-title">3-level shadow nesting</div>
+  <my-app data-component="my-app"></my-app>
+</div>
+
+<h2>Scenario 5 — Elements with hashed / unstable classes (selector fallback)</h2>
+<div class="scenario">
+  <div class="scenario-title">Should fall back to tag or attribute selector — not the hashed class</div>
+  <my-hashed data-component="my-hashed"></my-hashed>
+</div>
+
+<script>
+// ── Scenario 2: Single shadow root ──────────────────────────────────────────
+class MyButton extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        button {
+          padding: 8px 20px;
+          background: #6366f1;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 600;
+        }
+        button:hover { background: #818cf8; }
+        span { font-size: 12px; color: #94a3b8; margin-left: 12px; }
+      </style>
+      <button data-action="primary-cta" aria-label="Primary CTA">
+        Click Me (shadow)
+      </button>
+      <span>(inside shadow root)</span>
+    `;
+  }
+}
+customElements.define('my-button', MyButton);
+
+// ── Scenario 3: Two levels of shadow nesting ────────────────────────────────
+class MyInnerCard extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        .inner-content {
+          padding: 10px 14px;
+          background: #0f172a;
+          border-radius: 6px;
+          display: inline-block;
+        }
+        button {
+          padding: 6px 14px;
+          background: #10b981;
+          color: #022c22;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 13px;
+        }
+      </style>
+      <div class="inner-content">
+        <button data-action="card-action" id="inner-cta">Inner Action</button>
+        <span style="color:#64748b; font-size:12px; margin-left:8px">← 2nd-level shadow</span>
+      </div>
+    `;
+  }
+}
+customElements.define('my-inner-card', MyInnerCard);
+
+class MyCard extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        .card {
+          border: 1px solid #334155;
+          border-radius: 8px;
+          padding: 16px;
+          display: inline-block;
+        }
+        h3 { margin: 0 0 10px; font-size: 14px; color: #94a3b8; }
+      </style>
+      <div class="card">
+        <h3>Card Component (1st-level shadow)</h3>
+        <my-inner-card data-component="my-inner-card"></my-inner-card>
+      </div>
+    `;
+  }
+}
+customElements.define('my-card', MyCard);
+
+// ── Scenario 4: Three levels deep ───────────────────────────────────────────
+class DeepButton extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <button data-testid="deep-submit" style="padding:6px 12px; background:#f59e0b; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; color:#1c1100;">
+        Deep Button
+      </button>
+      <span style="color:#64748b; font-size:11px; margin-left:8px;">← 3rd-level shadow</span>
+    `;
+  }
+}
+customElements.define('deep-button', DeepButton);
+
+class AppSection extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <div style="border:1px solid #334155; border-radius:6px; padding:10px; display:inline-block;">
+        <span style="font-size:12px; color:#64748b;">Section (2nd-level) → </span>
+        <deep-button data-component="deep-button"></deep-button>
+      </div>
+    `;
+  }
+}
+customElements.define('app-section', AppSection);
+
+class MyApp extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <div style="border:1px solid #1e293b; border-radius:8px; padding:14px; display:inline-block;">
+        <span style="font-size:13px; color:#475569;">App Root (1st-level shadow) → </span>
+        <app-section data-component="app-section"></app-section>
+      </div>
+    `;
+  }
+}
+customElements.define('my-app', MyApp);
+
+// ── Scenario 5: Hashed / unstable class names ────────────────────────────────
+class MyHashed extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        /* Simulate Emotion / styled-components hashed classes */
+        .css-xK3_f2 {
+          padding: 8px 16px;
+          background: #7c3aed;
+          color: #fff;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 13px;
+        }
+      </style>
+      <button class="css-xK3_f2" role="button" aria-label="Hashed button">
+        Button with hashed class
+      </button>
+      <span style="color:#64748b; font-size:12px; margin-left:10px;">(class "css-xK3_f2" should be skipped → uses role/aria-label)</span>
+    `;
+  }
+}
+customElements.define('my-hashed', MyHashed);
+</script>
+
+</body>
+</html>
