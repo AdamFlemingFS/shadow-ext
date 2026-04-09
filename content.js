@@ -62,7 +62,14 @@
       return `#${CSS.escape(el.id)}`;
     }
 
-    // 3. Stable class names — pick the first class that looks handwritten
+    // 3. Custom element tag — contains a hyphen, so it's already a descriptive
+    //    named component. Prefer it over potentially generic class names like
+    //    "hydrated", "loaded", "active" that frameworks add as state markers.
+    if (tag.includes("-")) {
+      return tag;
+    }
+
+    // 4. Stable class names — pick the first class that looks handwritten
     const classes = Array.from(el.classList).filter(
       (c) => !isUnstableIdentifier(c)
     );
@@ -135,18 +142,30 @@
     if (!fragments || fragments.length === 0) return null;
 
     const segmentStrings = fragments.map((fragment) => {
-      // For each fragment, build a minimal path:
-      // Use only the target element's best selector (last in fragment),
-      // preceded by the direct host if useful for specificity
-      const targetEl = fragment[fragment.length - 1];
+      const targetEl  = fragment[fragment.length - 1];
       const targetSel = getBestSelector(targetEl);
 
-      // Optionally prefix the shadow host (first element of this fragment if it's a custom element)
+      // If the target itself has a data-* selector, it's specific enough alone
+      if (targetSel.startsWith("[data-")) {
+        return targetSel;
+      }
+
+      // Walk backwards through the fragment (excluding the target) to find the
+      // closest ancestor that has a data-* selector — these are the most stable
+      // anchors and more useful than the shadow host when they exist
+      for (let i = fragment.length - 2; i >= 0; i--) {
+        const ancestorSel = getBestSelector(fragment[i]);
+        if (ancestorSel.startsWith("[data-")) {
+          return `${ancestorSel} ${targetSel}`;
+        }
+      }
+
+      // Fall back: prefix the shadow host if it's a custom element (descriptive tag)
       const hostEl = fragment[0];
       if (
         fragment.length > 1 &&
         hostEl !== targetEl &&
-        hostEl.tagName.includes("-") // custom element = shadow host candidate
+        hostEl.tagName.includes("-")
       ) {
         return `${getBestSelector(hostEl)} ${targetSel}`;
       }
