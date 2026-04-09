@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "DISCOVER_ATTRIBUTES": {
       getCurrentTab().then((tab) => {
         if (!tab) return sendResponse({ ok: false, error: "No active tab", attrs: [] });
-        chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_ATTRIBUTES" }, (resp) => {
+        chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_ATTRIBUTES" }, { frameId: 0 }, (resp) => {
           if (chrome.runtime.lastError) {
             chrome.scripting
               .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
@@ -154,6 +154,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 chrome.tabs.sendMessage(
                   tab.id,
                   { type: "DISCOVER_ATTRIBUTES" },
+                  { frameId: 0 },
                   (r) => sendResponse(r || { ok: false, attrs: [] })
                 )
               )
@@ -169,7 +170,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "SCAN_PAGE": {
       getCurrentTab().then((tab) => {
         if (!tab) return sendResponse({ ok: false, error: "No active tab", results: [] });
-        chrome.tabs.sendMessage(tab.id, { type: "SCAN_PAGE", attrName: msg.attrName }, (resp) => {
+        chrome.tabs.sendMessage(tab.id, { type: "SCAN_PAGE", attrName: msg.attrName }, { frameId: 0 }, (resp) => {
           if (chrome.runtime.lastError) {
             chrome.scripting
               .executeScript({ target: { tabId: tab.id }, files: ["content.js"] })
@@ -177,6 +178,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 chrome.tabs.sendMessage(
                   tab.id,
                   { type: "SCAN_PAGE", attrName: msg.attrName },
+                  { frameId: 0 },
                   (r) => sendResponse(r || { ok: false, results: [] })
                 )
               )
@@ -195,6 +197,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.sendMessage(
           tab.id,
           { type: "HIGHLIGHT_ELEMENT", attrName: msg.attrName, attrValue: msg.attrValue },
+          { frameId: 0 },
           (resp) => {
             if (chrome.runtime.lastError) {
               chrome.scripting
@@ -204,7 +207,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     type: "HIGHLIGHT_ELEMENT",
                     attrName: msg.attrName,
                     attrValue: msg.attrValue,
-                  })
+                  }, { frameId: 0 })
                 )
                 .catch(console.error);
               return;
