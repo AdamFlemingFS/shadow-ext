@@ -402,7 +402,8 @@ function prependResult(result, suppressAnimation = false) {
     now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   // FullStory selector
-  card.querySelector(".fs-value").textContent = result.fullstorySelector || "";
+  const fsValueEl = card.querySelector(".fs-value");
+  fsValueEl.textContent = result.fullstorySelector || "";
 
   // Debug path
   card.querySelector(".debug-value").textContent = result.debugPath || "";
@@ -416,7 +417,7 @@ function prependResult(result, suppressAnimation = false) {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const field = btn.dataset.field;
-      const text  = field === "fs" ? result.fullstorySelector : result.debugPath;
+      const text  = field === "fs" ? fsValueEl.textContent : result.debugPath;
       copyToClipboard(btn, text);
     });
   });
@@ -436,7 +437,7 @@ function prependResult(result, suppressAnimation = false) {
 
   btnSaveItem.addEventListener("click", () => {
     if (savedItems.length >= MAX_SAVED) return;
-    addToSaved(result.fullstorySelector || "");
+    addToSaved(fsValueEl.textContent || "");
     // Visual feedback: fill the bookmark icon
     btnSaveItem.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
     btnSaveItem.classList.add("saved");

@@ -401,7 +401,7 @@ details[open] > .segments-container {
   line-height: 1.55;
   word-break: break-all;
   white-space: pre-wrap;
-  user-select: all;
+  user-select: text;
   border: 1px solid var(--border);
   cursor: text;
   transition: border-color 0.12s;
