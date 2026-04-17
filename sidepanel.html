@@ -39,6 +39,10 @@
       Saved
       <span id="saved-badge" class="tab-badge" hidden></span>
     </button>
+    <button id="tab-btn-crawl" class="tab-btn">
+      Crawl
+      <span id="crawl-badge" class="tab-badge" hidden></span>
+    </button>
   </nav>
 
   <!-- ── Tab 1: Selection ────────────────────────────────────────────────── -->
@@ -80,8 +84,11 @@
   <div id="tab-saved" class="tab-panel">
 
     <div class="saved-toolbar">
-      <span id="saved-count" class="saved-count-text">0 / 20</span>
+      <span id="saved-count" class="saved-count-text">0 saved</span>
       <button id="btn-clear-done" class="btn-text-danger" disabled>Clear done</button>
+    </div>
+    <div class="saved-search-wrap">
+      <input id="saved-search" class="saved-search-input" type="search" placeholder="Filter saved…" autocomplete="off" />
     </div>
 
     <div id="saved-list" class="saved-list"></div>
@@ -149,6 +156,10 @@
         spellcheck="false"
         aria-label="Attribute name to scan for"
       />
+      <label class="live-scan-toggle" title="Keep scanning as you navigate this tab">
+        <input id="live-scan-checkbox" type="checkbox" />
+        <span class="live-scan-toggle-label">Live</span>
+      </label>
       <button id="btn-scan" class="btn btn-secondary">
         <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/>
@@ -156,6 +167,21 @@
         </svg>
         <span id="btn-scan-label">Scan Values</span>
       </button>
+    </div>
+
+    <!-- Live-scan status banner (visible only while a live session is active) -->
+    <div id="live-scan-banner" class="live-scan-banner" hidden>
+      <span class="live-scan-dot"></span>
+      <div class="live-scan-banner-text">
+        <div class="live-scan-banner-line">
+          <span class="live-scan-label">Live scan</span>
+          <span id="live-scan-attr" class="live-scan-attr"></span>
+          <span class="live-scan-sep">·</span>
+          <span id="live-scan-pages">0 pages</span>
+        </div>
+        <div id="live-scan-url" class="live-scan-url" title=""></div>
+      </div>
+      <button id="btn-stop-live-scan" class="btn-text-danger">Stop</button>
     </div>
 
     <!-- Scan results (hidden until a scan has run) -->
@@ -191,6 +217,12 @@
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
+      </div>
+      <div class="result-url-bar" hidden>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="result-url-icon">
+          <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        <span class="result-url"></span>
       </div>
 
       <!-- FullStory selector -->
@@ -263,6 +295,15 @@
           </svg>
         </button>
       </div>
+      <div class="saved-field-row saved-url-row" hidden>
+        <span class="saved-field-label">Page</span>
+        <span class="saved-url-text"></span>
+        <button class="btn-copy-icon saved-copy-url" title="Copy URL">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+      </div>
       <div class="saved-item-footer">
         <button class="btn-mark-done" title="Mark as added to FullStory">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -282,6 +323,116 @@
     </div>
   </template>
 
+  <!-- ── Tab 4: Crawl ────────────────────────────────────────────────────── -->
+  <div id="tab-crawl" class="tab-panel">
+
+    <!-- ── Input section ─────────────────────────────────────────────── -->
+    <div class="crawl-input-section" id="crawl-input-section">
+      <div class="crawl-input-header">
+        <span class="crawl-label">URLs to crawl</span>
+        <span class="crawl-hint">One URL per line</span>
+      </div>
+      <textarea
+        id="crawl-url-input"
+        class="crawl-url-textarea"
+        placeholder="https://example.com/&#10;https://example.com/pricing&#10;https://example.com/checkout&#10;&#10;Leave empty to harvest the current tab live as you browse."
+        spellcheck="false"
+        rows="5"
+      ></textarea>
+
+      <div class="crawl-options-row">
+        <label class="crawl-option-label" for="crawl-hydration-select">
+          Wait after load
+        </label>
+        <select id="crawl-hydration-select" class="crawl-select">
+          <option value="1500">1.5 s</option>
+          <option value="3000">3 s</option>
+          <option value="5000">5 s</option>
+        </select>
+      </div>
+
+      <div class="crawl-actions">
+        <button id="btn-start-crawl" class="btn btn-primary">
+          <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          Start Crawl
+        </button>
+        <button id="btn-stop-crawl" class="btn btn-danger" hidden>
+          <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          Stop
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Progress section ───────────────────────────────────────────── -->
+    <div id="crawl-progress-section" class="crawl-progress-section" hidden>
+      <div class="crawl-progress-header">
+        <span id="crawl-progress-text" class="crawl-progress-text">Crawling…</span>
+        <span id="crawl-live-badge" class="crawl-live-badge" hidden>LIVE</span>
+        <span id="crawl-progress-count" class="crawl-progress-count">0 / 0</span>
+      </div>
+      <div class="crawl-progress-bar-track">
+        <div id="crawl-progress-bar" class="crawl-progress-bar" style="width:0%"></div>
+      </div>
+      <div id="crawl-current-url" class="crawl-current-url"></div>
+      <div id="crawl-live-count" class="crawl-live-count">Candidates found: <strong id="crawl-cand-total">0</strong></div>
+      <div id="crawl-log" class="crawl-log"></div>
+    </div>
+
+    <!-- ── Results section ────────────────────────────────────────────── -->
+    <div id="crawl-results-section" class="crawl-results-section" hidden>
+      <div class="crawl-results-toolbar">
+        <input id="crawl-search" class="crawl-search-input" type="search" placeholder="Filter results…" autocomplete="off" />
+        <label class="crawl-select-all-label">
+          <input type="checkbox" id="crawl-select-all" /> All
+        </label>
+      </div>
+
+      <!-- Attribute-based finds -->
+      <div class="crawl-section-header" id="crawl-attr-header">
+        <span class="crawl-section-title">Attribute-based finds</span>
+        <span id="crawl-attr-count" class="crawl-section-count"></span>
+      </div>
+      <div id="crawl-attr-list" class="crawl-candidate-list"></div>
+
+      <!-- Interactive candidates -->
+      <div class="crawl-section-header" id="crawl-interactive-header">
+        <span class="crawl-section-title">Interactive candidates</span>
+        <span id="crawl-interactive-count" class="crawl-section-count"></span>
+      </div>
+      <div id="crawl-interactive-list" class="crawl-candidate-list"></div>
+
+      <!-- Save selected footer -->
+      <div class="crawl-save-footer">
+        <span id="crawl-selected-count" class="crawl-selected-count">0 selected</span>
+        <button id="btn-save-crawl-selected" class="btn btn-primary crawl-save-btn" disabled>
+          <svg class="btn-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span id="btn-save-crawl-label">Save Selected</span>
+        </button>
+        <button id="btn-clear-crawl" class="btn-text-muted">Clear</button>
+      </div>
+    </div>
+
+    <!-- ── Empty state ────────────────────────────────────────────────── -->
+    <div id="crawl-empty" class="empty-state">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+        <circle cx="11" cy="11" r="8"/>
+        <path d="M21 21l-4.35-4.35"/>
+        <line x1="11" y1="8" x2="11" y2="14"/>
+        <line x1="8" y1="11" x2="14" y2="11"/>
+      </svg>
+      <p class="empty-title">No crawl results yet</p>
+      <p class="empty-sub">Paste URLs above and click Start Crawl. The extension will visit each page and collect stable selectors automatically.</p>
+    </div>
+
+  </div>
+
+  <script src="crawler.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

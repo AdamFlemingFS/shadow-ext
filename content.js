@@ -349,8 +349,15 @@
 
   // ─── Event Handlers ───────────────────────────────────────────────────────
 
+  let _mmCount = 0;
   function onMouseMove(e) {
     if (!pickerActive) return;
+
+    // #region agent log H4 – confirm extension mousemove is firing in this frame
+    if (++_mmCount % 40 === 1) {
+      fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run2',hypothesisId:'H4',location:'content.js:onMouseMove',message:'mousemove active in frame',data:{frameHref:location.href,count:_mmCount,targetTag:e.composedPath().find(n=>n instanceof Element)?.tagName},timestamp:Date.now()})}).catch(()=>{});
+    }
+    // #endregion
 
     ensureOverlayContainer();
 
@@ -372,25 +379,82 @@
     positionTooltip(e.clientX, e.clientY, shortLabel);
   }
 
+  /**
+   * Returns true when `el` looks like a FullStory UI overlay rather than
+   * meaningful page content — a plain <div> or <span> with no semantic
+   * attributes (no id, no data-*, no role, no aria-label) that also has
+   * computed pointer-events enabled.  Used to decide whether to pierce
+   * the overlay and find the element underneath.
+   */
+  function looksLikeTransparentOverlay(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag !== "div" && tag !== "span") return false;
+    if (el.id) return false;
+    const hasData  = Array.from(el.attributes).some((a) => a.name.startsWith("data-"));
+    if (hasData) return false;
+    if (el.getAttribute("role") || el.getAttribute("aria-label")) return false;
+    // Must actually intercept pointer events to count as an overlay
+    const pe = window.getComputedStyle(el).pointerEvents;
+    return pe !== "none";
+  }
+
   function onClick(e) {
+    // #region agent log H1/H2 – did onClick fire, and is picker active?
+    fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run2',hypothesisId:'H1-H2',location:'content.js:onClick-entry',message:'onClick fired',data:{pickerActive,frameHref:location.href,targetTag:e.composedPath()[0]?.nodeName,pathLen:e.composedPath().length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     if (!pickerActive) return;
 
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
 
-    const path = e.composedPath();
-    const target = path.find(
+    let path = e.composedPath();
+    let target = path.find(
       (n) => n instanceof Element && n !== overlayEl && n !== tooltipEl
     );
 
+    // #region agent log H2/H3 – what element was targeted?
+    fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run1',hypothesisId:'H2-H3',location:'content.js:onClick-target',message:'target found',data:{targetTag:target?.tagName,targetId:target?.id,targetDataAttrs:target?Array.from(target.attributes).filter(a=>a.name.startsWith('data-')).map(a=>a.name+'='+a.value):[],isOverlay:target?looksLikeTransparentOverlay(target):null,pathLen:path.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     if (!target) return;
+
+    // If the top element looks like a FullStory UI overlay (no semantic
+    // attributes, plain div/span that eats pointer events), temporarily hide
+    // it and re-query at the same coordinates to find the real element beneath.
+    if (looksLikeTransparentOverlay(target)) {
+      const savedVisibility = target.style.visibility;
+      const savedPointerEvents = target.style.pointerEvents;
+      target.style.visibility = "hidden";
+      target.style.pointerEvents = "none";
+
+      const pierced = document.elementFromPoint(e.clientX, e.clientY);
+
+      target.style.visibility = savedVisibility;
+      target.style.pointerEvents = savedPointerEvents;
+
+      if (pierced && pierced !== overlayEl && pierced !== tooltipEl) {
+        // Rebuild a synthetic composedPath starting from the pierced element
+        // so buildSelectorSegments can traverse shadow boundaries correctly.
+        target = pierced;
+        path = [pierced];
+        let node = pierced.parentNode;
+        while (node) {
+          path.push(node);
+          node = node instanceof ShadowRoot ? node.host : node.parentNode;
+        }
+      }
+    }
 
     const fragments = buildSelectorSegments(path);
     const result = buildOutputSelectors(fragments);
 
+    // #region agent log H3 – log the result about to be sent (or null)
+    fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run1',hypothesisId:'H3',location:'content.js:onClick-result',message:'selector result',data:{hasResult:!!result,selector:result?.fullstorySelector,segmentCount:result?.segments?.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     if (result) {
-      // Send result to the background service worker
       chrome.runtime.sendMessage({
         type: "SELECTOR_RESULT",
         payload: result,
@@ -402,6 +466,11 @@
   }
 
   function onKeyDown(e) {
+    // #region agent log H5 – log every keydown while picker active
+    if (pickerActive) {
+      fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run2',hypothesisId:'H5',location:'content.js:onKeyDown',message:'keydown while active',data:{key:e.key,code:e.code,isTrusted:e.isTrusted,frameHref:location.href},timestamp:Date.now()})}).catch(()=>{});
+    }
+    // #endregion
     if (!pickerActive) return;
     // Escape cancels the picker
     if (e.key === "Escape") {
@@ -415,20 +484,26 @@
   function activatePicker() {
     if (pickerActive) return;
     pickerActive = true;
-    document.addEventListener("mousemove", onMouseMove, true);
-    document.addEventListener("click", onClick, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    document.body.style.cursor = "crosshair";
+    // Listeners are pre-registered at script load (document_start) so the
+    // extension is first in the capture-phase queue, before FullStory's own
+    // handlers. We only need to flip the state flag and set up the overlay.
+    if (document.body) {
+      document.body.style.cursor = "crosshair";
+    } else {
+      document.addEventListener("DOMContentLoaded", () => {
+        document.body.style.cursor = "crosshair";
+      }, { once: true });
+    }
     ensureOverlayContainer();
   }
 
   function deactivatePicker() {
     if (!pickerActive) return;
+    // #region agent log H5 – catch every deactivatePicker call with stack trace
+    fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run2',hypothesisId:'H5',location:'content.js:deactivatePicker',message:'deactivatePicker called',data:{stack:new Error().stack?.split('\n').slice(1,5).join(' | '),frameHref:location.href},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     pickerActive = false;
-    document.removeEventListener("mousemove", onMouseMove, true);
-    document.removeEventListener("click", onClick, true);
-    document.removeEventListener("keydown", onKeyDown, true);
-    document.body.style.cursor = "";
+    if (document.body) document.body.style.cursor = "";
     removeOverlay();
     lastTarget = null;
   }
@@ -558,10 +633,136 @@
       .sort((a, b) => b.valueCount - a.valueCount);
   }
 
+  // ─── Page Harvester ──────────────────────────────────────────────────────
+  //
+  // Called by the Crawl driver (via HARVEST_PAGE message) to extract all stable
+  // selectors and interactive candidates from the current page in one shot.
+
+  const HARVEST_CTA_KEYWORDS = [
+    "checkout", "buy now", "buy", "add to cart", "add to bag",
+    "sign up", "signup", "sign-up", "subscribe", "submit",
+    "continue", "proceed", "pay now", "pay", "book now", "book",
+    "reserve", "register", "get started", "start free", "try free",
+    "free trial", "download", "install", "claim", "redeem",
+    "upgrade", "purchase", "place order", "confirm", "apply",
+    "enroll", "join now", "join", "next", "complete order",
+  ];
+
+  function getElementSignals(el) {
+    const rect        = el.getBoundingClientRect();
+    const tag         = el.tagName.toLowerCase();
+    const textContent = el.textContent.trim().slice(0, 80);
+    const ariaLabel   = el.getAttribute("aria-label") || "";
+    const role        = el.getAttribute("role") || "";
+    const combined    = `${textContent} ${ariaLabel}`.toLowerCase();
+    const inForm      = !!el.closest("form");
+    const isCTA       = HARVEST_CTA_KEYWORDS.some((kw) => combined.includes(kw));
+    const aboveFold   = rect.top >= 0 && rect.top < window.innerHeight;
+    const boundingArea = Math.round(rect.width * rect.height);
+    const inputType   = tag === "input" ? (el.getAttribute("type") || "text").toLowerCase() : null;
+    return { tag, textContent, ariaLabel, role, inForm, isCTA, aboveFold, boundingArea, inputType };
+  }
+
+  function harvestPage() {
+    const url      = location.href;
+    const hostname = location.hostname;
+
+    // ── Attribute-based finds ─────────────────────────────────────────────
+    const attrs      = discoverStableAttributes();
+    const attrResults = [];
+
+    for (const { attrName } of attrs) {
+      const scanResults = scanPageForAttribute(attrName);
+      for (const result of scanResults) {
+        let signals = {};
+        // Re-find the element for signal enrichment (same walk, so it's fast)
+        for (const el of walkDOMDeep(document)) {
+          if (el.getAttribute(attrName) === result.attrValue) {
+            signals = getElementSignals(el);
+            break;
+          }
+        }
+        attrResults.push({
+          ...result,
+          sourceUrl:       url,
+          sourceHostname:  hostname,
+          source:          "attribute",
+          ...signals,
+        });
+      }
+    }
+
+    // ── Interactive candidates ────────────────────────────────────────────
+    const seenInteractive      = new Set();
+    const interactiveCandidates = [];
+
+    for (const el of walkDOMDeep(document)) {
+      const tag  = el.tagName.toLowerCase();
+      const role = el.getAttribute("role");
+
+      const isInteractive =
+        tag === "button" ||
+        (tag === "a" && el.hasAttribute("href")) ||
+        (tag === "input" && ["submit", "button"].includes((el.getAttribute("type") || "").toLowerCase())) ||
+        tag === "form" ||
+        role === "button";
+
+      if (!isInteractive) continue;
+
+      const fragments = buildFragmentsFromElement(el);
+      const output    = buildOutputSelectors(fragments);
+      if (!output) continue;
+
+      const sel = output.fullstorySelector;
+      if (seenInteractive.has(sel)) continue;
+      seenInteractive.add(sel);
+
+      interactiveCandidates.push({
+        fullstorySelector: sel,
+        debugPath:         output.debugPath,
+        segments:          output.segments,
+        sourceUrl:         url,
+        sourceHostname:    hostname,
+        source:            "interactive",
+        count:             1,
+        tagName:           tag,
+        inShadow:          fragments.length > 1,
+        ...getElementSignals(el),
+      });
+    }
+
+    return {
+      url,
+      hostname,
+      pageTitle:             document.title,
+      attrResults,
+      interactiveCandidates,
+      harvestedAt:           Date.now(),
+    };
+  }
+
+  // ─── Early Event Registration ────────────────────────────────────────────
+  //
+  // Listeners are registered immediately at script load (document_start), which
+  // puts them first in the capture-phase queue — before FullStory's React app
+  // has had any chance to register its own handlers. Each handler returns early
+  // when the picker is not active, so there is no overhead during normal use.
+  //
+  // We deliberately do NOT removeEventListener when the picker is deactivated;
+  // the pickerActive guard makes them no-ops, and keeping them registered
+  // ensures ordering is preserved if the picker is toggled multiple times.
+
+  document.addEventListener("mousemove", onMouseMove, true);
+  document.addEventListener("click", onClick, true);
+  document.addEventListener("keydown", onKeyDown, true);
+
   // ─── Message Bus ──────────────────────────────────────────────────────────
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === "ACTIVATE_PICKER") {
+      // #region agent log H2 – which frames receive ACTIVATE_PICKER?
+      fetch('http://127.0.0.1:7579/ingest/1421809b-91be-4ff2-897d-20c9e8a58039',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d914fa'},body:JSON.stringify({sessionId:'d914fa',runId:'run2',hypothesisId:'H2',location:'content.js:onMessage-ACTIVATE',message:'ACTIVATE_PICKER received',data:{frameHref:location.href,isTopFrame:window===window.top},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       activatePicker();
       sendResponse({ ok: true });
     } else if (msg.type === "DEACTIVATE_PICKER") {
@@ -579,6 +780,13 @@
     } else if (msg.type === "HIGHLIGHT_ELEMENT") {
       showScanHighlights(msg.attrName, msg.attrValue);
       sendResponse({ ok: true });
+    } else if (msg.type === "HARVEST_PAGE") {
+      try {
+        const payload = harvestPage();
+        sendResponse({ ok: true, payload });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
     }
     return true; // keep channel open for async response
   });
