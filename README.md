@@ -14,6 +14,10 @@ Modern web apps built with Stencil, Lit, or other web component frameworks rende
 
 **Save selectors** — bookmark up to 20 selectors with custom names and a "done" checkbox for tracking which ones have been added to FullStory.
 
+**Crawl multiple URLs** — paste a list of URLs and the extension opens each in a background tab, waits for JS hydration, harvests all stable attribute-based elements and interactive candidates, then scores and ranks them so the highest-value selectors surface first.
+
+**Live scan** — enable the Live toggle on the Scan tab and the extension re-runs the chosen attribute scan automatically after every navigation on the current tab, merging results across pages as you browse.
+
 ## How It Works
 
 ### Selector Generation
@@ -40,6 +44,33 @@ Alongside the FullStory selector, the extension shows a debug path using `>>` to
 ### Page Scanner
 
 The scanner uses a recursive `TreeWalker` that enters every open shadow root on the page. It collects all stable attribute names, then for a chosen attribute finds every unique value, deduplicates by attribute value, and generates a FullStory selector for each.
+
+### Crawler
+
+The crawler opens each URL in a hidden background tab and waits for the page to fully load, then waits an additional hydration delay (configurable: 500 ms – 5 s) for JS frameworks to render. It then sends a `HARVEST_PAGE` message to the content script, which collects two sets of candidates:
+
+- **Attribute finds** — elements with stable `data-*` attributes, deduplicated by attribute value
+- **Interactive candidates** — buttons, links, and inputs identified by tag, role, or CTA keyword match
+
+Each candidate is scored 0–100 by `crawler.js` based on weighted signals:
+
+| Signal | Points |
+|---|---|
+| CTA keyword in text/label/value | +30 |
+| Has `data-*` attribute | +20 |
+| Custom element tag | +15 |
+| Inside shadow DOM | +10 |
+| Interactive element type | +10 |
+| Has `aria-label` | +10 |
+| Multiple pages | +10 |
+| Generic/hashed class names | −20 |
+| No stable identifier | −15 |
+
+Results from all pages are merged (same selector seen on multiple pages gets a higher score), then split into **Attribute Finds** and **Interactive Candidates** tabs sorted by score descending.
+
+### Live Scan
+
+With the **Live** toggle enabled on the Scan tab, the extension listens for navigation events on the active tab (both full page loads and SPA history changes). After each navigation it waits a short debounce period, then re-runs the selected attribute scan. New values are merged into the existing result list, and a banner shows how many pages have been scanned. Click **Stop** to end the live scan.
 
 ## Installation
 
@@ -72,6 +103,23 @@ The scanner uses a recursive `TreeWalker` that enters every open shadow root on 
 ### Saved Selectors
 
 The **Saved** tab holds up to 20 selectors with editable names. Use the "Mark done" button to track which selectors have been added to FullStory. Saved selectors persist across browser sessions.
+
+### Crawling Multiple URLs
+
+1. Open the **Crawl** tab
+2. Paste one URL per line into the text area (or leave it empty to harvest the current tab live as you browse)
+3. Choose a hydration delay that matches your site's framework startup time
+4. Click **Start Crawl** — a progress bar tracks each URL as it loads
+5. When complete, results are split into **Attribute Finds** and **Interactive Candidates**, sorted by score
+6. Click any row to highlight the element, or save it directly to the Saved tab
+
+### Live Scan
+
+1. Go to the **Scan** tab and discover attributes as normal
+2. Click an attribute to scan for it, then enable the **Live** toggle
+3. Navigate the page — the scan re-runs automatically after each page transition
+4. Results accumulate across pages; the banner shows the current URL and page count
+5. Click **Stop** to end the live scan
 
 ## Compatibility
 
