@@ -20,11 +20,47 @@ Modern web apps built with Stencil, Lit, or other web component frameworks rende
 
 ## How It Works
 
+### Selector Stability Algorithm
+
+Every element is evaluated through a tiered scoring system that ranks selectors by how reliably they will target the same element across code changes and deployments.
+
+#### Stability Tiers
+
+| Tier | Weight | Attributes |
+|------|--------|------------|
+| T1 | 1.0 | `data-testid`, `data-test-id`, `data-cy`, `data-qa` — dedicated test/telemetry attributes |
+| T2 | 0.7 | `data-id`, `data-user-id`, `data-product-id` — business identity attributes |
+| T2 | 0.5 | Any other `data-*` attribute |
+| T3 | 0.4 | Descriptive, non-utility CSS class (e.g. `.ProductCard`, `.SubmitButton`) |
+| T4 | 0.2 | `role`, `aria-label`, `aria-labelledby`, `aria-describedby` |
+
+**Score formula:** `(W_attr × C_attr) + (W_class × C_class)`, capped at 1.0. An element with `data-testid` and a descriptive class scores 1.0; one with only `aria-label` scores 0.2.
+
+#### What Gets Filtered Out
+
+The algorithm aggressively strips identifiers that look stable but aren't:
+
+- **CSS-in-JS hashes** — `sc-xxxxx`, `css-xxxxx`, `prefix__sc-hash`, pure hex strings, consonant-heavy segments with embedded digits (e.g. `gltkz8`), and all-alpha short strings where uppercase chars outnumber lowercase (e.g. `gaXWZW`, `hYbTnQ` — the styled-components hash pattern)
+- **Atomic/utility classes** — Tailwind (`flex`, `mt-4`, `bg-blue-500`), Bootstrap (`d-flex`, `col-md-6`, `btn`), and state markers (`active`, `disabled`, `loading`)
+- **Generic attribute values** — attribute values like `click`, `toggle`, `true`, `false`, `open`, `button` that are shared by many elements and provide no uniqueness (e.g. `data-action="click"` is skipped; `data-action="add-to-cart"` is kept)
+
+#### Selector Construction
+
+When a stable data attribute is found, the algorithm enriches it with the best descriptive class to produce a human-readable, double-anchored selector:
+
+```
+button.CheckoutBtn[data-testid="checkout-button"]
+```
+
+rather than just `[data-testid="checkout-button"]`. The class adds context without sacrificing stability — it is only included if it passes all the filters above.
+
+When no stable identifier exists on an element, the algorithm walks up the DOM to find the nearest stable ancestor and surfaces it as a suggestion.
+
 ### Selector Generation
 
 The extension uses `event.composedPath()` on click events, which returns the full DOM path through any shadow boundary — including closed shadow roots. It splits this path into fragments at each `ShadowRoot` and generates a selector from the most stable identifiers available, prioritising:
 
-1. `data-*` attributes (most stable — `[data-test-id="submit-btn"]`)
+1. `data-*` attributes (most stable — `button.SubmitForm[data-testid="submit-btn"]`)
 2. Handwritten IDs (`#user-profile`)
 3. Custom element tag names (`my-button`)
 4. Stable class names (heuristically filtered to exclude framework-generated classes)
@@ -44,6 +80,18 @@ Alongside the FullStory selector, the extension shows a debug path using `>>` to
 ### Page Scanner
 
 The scanner uses a recursive `TreeWalker` that enters every open shadow root on the page. It collects all stable attribute names, then for a chosen attribute finds every unique value, deduplicates by attribute value, and generates a FullStory selector for each.
+
+Discovered attributes are listed in **stability tier order** (T1 first) rather than by value count, so the most reliable attributes surface at the top. Each attribute row shows a tier badge (T1 / T2 / T4) indicating how stable that attribute type is.
+
+Each scan result row shows three lines of information:
+
+```
+topMenuaCregisterButton  [T1 · 100%]
+button[data-testid="topMenuaCregisterButton"]          ← optimized selector
+~~button.gaXWZW[data-testid="topMenuaCregisterButton"]~~   ← raw (before optimization)
+```
+
+The **optimized selector** is what the stability engine chose after stripping hashes and utility classes. The **raw selector** (struck-through, only shown when it differs) is what was literally on the DOM — making it easy to spot what was filtered and why. Results within each attribute are sorted by stability score descending.
 
 ### Crawler
 
@@ -94,11 +142,15 @@ With the **Live** toggle enabled on the Scan tab, the extension listens for navi
 ### Scanning by Attribute
 
 1. Go to the **Scan** tab
-2. Click **Discover Attributes** — the extension scans the page and lists all `data-*`, `aria-label`, `aria-describedby`, and `role` attributes found
-3. Click any attribute in the list to automatically scan for all its unique values
-4. Each result shows the attribute value, element tag, count of matching elements, and whether it's inside shadow DOM
-5. Click a result row to highlight matching elements on the page
-6. Click the bookmark icon to save a selector to the Saved tab
+2. Click **Discover Attributes** — the extension scans the page and lists all `data-*`, `aria-label`, `aria-describedby`, and `role` attributes, sorted by stability tier (T1 best)
+3. Each attribute row shows a **tier badge** (T1 green / T2 blue / T4 orange) and a value count
+4. Click any attribute to automatically scan for all its unique values
+5. Each result shows:
+   - The attribute value with a **stability score badge** (e.g. `100%`, `70%`) — hover for tier and selector detail
+   - The **optimized selector** the algorithm chose (hashes and utility classes removed, descriptive class added where available)
+   - The **raw selector** struck-through beneath it, only when the algorithm changed something — so you can see exactly what was filtered
+6. Click a result row to highlight matching elements on the page
+7. Click the bookmark icon to save a selector to the Saved tab
 
 ### Saved Selectors
 
