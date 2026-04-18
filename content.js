@@ -28,6 +28,194 @@
     return UNSTABLE_PATTERNS.some((re) => re.test(value));
   }
 
+  // ─── Selector Stability Engine ────────────────────────────────────────────
+  //
+  // Tiered scoring (per FullStory stable-selector spec):
+  //   Tier 1 (1.0) — data-testid / data-test-id / data-cy / data-qa
+  //   Tier 2 (0.7) — data-id / data-*-id (business IDs)
+  //   Tier 2 (0.5) — generic data-* attributes
+  //   Tier 3 (0.4) — descriptive non-utility CSS classes
+  //   Tier 4 (0.2) — semantic ARIA attributes (role, aria-label, …)
+  //
+  // Score formula: (W_attr × C_attr) + (W_class × C_class), capped at 1.0
+
+  const STABILITY_TIER1 = new Set(["data-test-id", "data-testid", "data-cy", "data-qa"]);
+  const STABILITY_TIER2 = [/^data-id$/, /^data-[a-z]+-id$/];
+  const STABILITY_ARIA  = new Set(["aria-label", "aria-labelledby", "aria-describedby", "role"]);
+
+  function getAttrStabilityWeight(name) {
+    if (STABILITY_TIER1.has(name))                            return 1.0;
+    if (STABILITY_TIER2.some((re) => re.test(name)))          return 0.7;
+    if (name.startsWith("data-"))                             return 0.5;
+    if (STABILITY_ARIA.has(name))                             return 0.2;
+    return 0;
+  }
+
+  // Atomic / utility CSS class patterns — Tailwind, Bootstrap, state markers.
+  const UTILITY_CLASS_RE = [
+    /^(flex|grid|block|inline(?:-flex|-block|-grid)?|hidden|contents|flow-root)$/,
+    /^(static|fixed|absolute|relative|sticky)$/,
+    /^[mp][xylrbt]?-/,
+    /^(w|h|min-[wh]|max-[wh])-/,
+    /^(gap|space|order|grid-cols|grid-rows|grid-flow|auto-cols|auto-rows)-/,
+    /^(items|justify|content|self|place(?:-items|-content|-self)?)-/,
+    /^(flex|grow|shrink|basis)-/,
+    /^(text|font|leading|tracking|whitespace|break|truncate|line-clamp|indent)-/,
+    /^(bg|border|ring|outline|shadow|divide|rounded|opacity|mix-blend|bg-blend)-/,
+    /^(from|via|to)-/,
+    /^(rotate|scale|skew|translate|origin|transform|transition|duration|ease|delay|animate)-/,
+    /^(overflow|overscroll|scroll|snap|touch|select|resize|pointer|cursor|appearance)-/,
+    /^(float|clear|object|z|sr-only|not-sr-only|antialiased|subpixel-antialiased)(-.*)?$/,
+    /^(hover|focus|active|disabled|checked|visited|dark|group-hover|peer-|focus-within|focus-visible):/,
+    /^(sm|md|lg|xl|2xl|print|motion-):/,
+    /^(d-|m-|mt-|mb-|ml-|mr-|mx-|my-|p-|pt-|pb-|pl-|pr-|px-|py-)/,
+    /^(container|row$|col$|col-[a-z0-9-]+|offset-[a-z0-9-]+|clearfix)$/,
+    /^(btn$|btn-|badge$|badge-|card$|card-|modal|nav$|nav-|navbar|alert|form-|input-group)/,
+    /^(text-(center|left|right|start|end|nowrap|wrap|break))$/,
+    /^(float-|overflow-|position-|fixed-top|fixed-bottom|sticky-top|sticky-bottom)/,
+    /^(justify-content-|align-items-|align-self-|flex-)/,
+    /^(active|disabled|selected|open|closed|loading|error|success|warning|show|hide|fade|collapse)$/,
+    /^(is-|was-|has-)[a-z]/,
+  ];
+
+  function isUtilityClass(cls) {
+    return UTILITY_CLASS_RE.some((re) => re.test(cls));
+  }
+
+  function isCssJsHash(cls) {
+    // Explicit framework prefixes: sc-xxxxx, css-xxxxx
+    if (/^(sc-|css-)[a-zA-Z0-9]{4,}$/.test(cls)) return true;
+    // Embedded styled-components scope marker anywhere in the class: prefix__sc-hash
+    if (/__(sc|css|emotion)-/.test(cls)) return true;
+    // Pure hex hash
+    if (/^[a-f0-9]{5,}$/i.test(cls)) return true;
+    // Ends with hex hash after a separator: Component-3f8b2a or Card__abc123de
+    if (/[_-][a-f0-9]{5,}(-\d+)?$/i.test(cls)) return true;
+    // Styled-components all-alpha hash: starts lowercase, then majority uppercase chars.
+    // Real class names follow camelCase/PascalCase word boundaries — hashes don't.
+    // e.g. gaXWZW, hYbTnQ, iRxBmP — short, starts lower, more upper than lower.
+    if (/^[a-zA-Z]{4,9}$/.test(cls)) {
+      const lower = (cls.match(/[a-z]/g) || []).length;
+      const upper = (cls.match(/[A-Z]/g) || []).length;
+      if (/^[a-z]/.test(cls) && upper > lower) return true;
+    }
+    // Consonant-heavy segments with embedded digits — no real word has 5+ chars
+    // with zero vowels (e.g. "gltkz8", "wqzmn5"). Split on separators and test each part.
+    for (const part of cls.split(/[-_]/)) {
+      if (part.length >= 5 && !/[aeiouy]/i.test(part) && /\d/.test(part)) return true;
+      if (part.length >= 8 && !/[aeiouy]/i.test(part)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Unfiltered element-level selector — what's literally on the DOM before the
+   * stability engine strips hashes, utility classes, and generic attribute values.
+   * Used alongside the optimized selector to show the input/output difference.
+   */
+  function getRawSelector(el) {
+    const tag = el.tagName.toLowerCase();
+    const dataAttrs = Array.from(el.attributes).filter(
+      (a) => a.name.startsWith("data-") && a.value
+    );
+    if (dataAttrs.length > 0) {
+      const preferred = dataAttrs.find(
+        (a) =>
+          a.name.includes("testid") || a.name.includes("test-id") ||
+          a.name.includes("cy")     || a.name.includes("qa") ||
+          a.name.includes("id")     || a.name.includes("action") ||
+          a.name.includes("name")   || a.name.includes("component")
+      ) || dataAttrs[0];
+      const firstCls = el.classList[0];
+      const prefix = firstCls ? `${tag}.${CSS.escape(firstCls)}` : "";
+      return `${prefix}[${preferred.name}="${preferred.value}"]`;
+    }
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    if (tag.includes("-")) return tag;
+    if (el.classList[0]) return `.${CSS.escape(el.classList[0])}`;
+    for (const attr of ["role", "name", "type", "aria-label", "aria-labelledby"]) {
+      const val = el.getAttribute(attr);
+      if (val) return `${tag}[${attr}="${val}"]`;
+    }
+    return tag;
+  }
+
+  // Attribute values that are too generic to serve as unique identifiers.
+  // An element may have data-action="click" but so do hundreds of others —
+  // using it as a selector gives false confidence with no real specificity.
+  const GENERIC_ATTR_VALUES = new Set([
+    "click", "submit", "toggle", "open", "close", "show", "hide",
+    "expand", "collapse", "dismiss", "trigger", "activate", "select",
+    "true", "false", "yes", "no", "1", "0",
+    "button", "link", "anchor", "form", "input", "modal", "dialog", "menu",
+    "on", "off", "enabled", "disabled", "active", "inactive",
+  ]);
+
+  function isGenericAttrValue(value) {
+    const v = value.toLowerCase().trim();
+    if (GENERIC_ATTR_VALUES.has(v)) return true;
+    if (/^\d{1,3}$/.test(v)) return true; // bare small number
+    return false;
+  }
+
+  function isDescriptiveClass(cls) {
+    return cls.length > 1
+      && !isUtilityClass(cls)
+      && !isCssJsHash(cls)
+      && !isUnstableIdentifier(cls);
+  }
+
+  function attrWeightToTier(w) {
+    if (w >= 1.0) return 1;
+    if (w >= 0.5) return 2;
+    if (w >= 0.2) return 4;
+    return null;
+  }
+
+  /**
+   * Returns { score, tier, calculatedSelector, isUnstable } for an element.
+   * score is 0.0–1.0; tier is 1/2/3/4/null; calculatedSelector is
+   * tagName.descriptiveClass[data-attribute="value"].
+   */
+  function computeStabilityScore(el) {
+    const tag = el.tagName.toLowerCase();
+
+    let attrWeight = 0, bestAttrName = null, bestAttrValue = null;
+    for (const { name, value } of el.attributes) {
+      const w = getAttrStabilityWeight(name);
+      if (w > attrWeight && value.trim() && !isGenericAttrValue(value)) {
+        attrWeight = w; bestAttrName = name; bestAttrValue = value;
+      }
+    }
+
+    let classWeight = 0, bestClass = null;
+    for (const cls of el.classList) {
+      if (isDescriptiveClass(cls)) { classWeight = 0.4; bestClass = cls; break; }
+    }
+
+    const score = Math.min(attrWeight + classWeight, 1.0);
+    const tier  = attrWeightToTier(attrWeight) || (classWeight > 0 ? 3 : null);
+
+    let calculatedSelector = tag;
+    if (bestClass)    calculatedSelector += `.${CSS.escape(bestClass)}`;
+    if (bestAttrName) calculatedSelector += `[${bestAttrName}="${bestAttrValue}"]`;
+
+    return { score, tier, calculatedSelector, isUnstable: score === 0 };
+  }
+
+  /**
+   * Returns the nearest ancestor with a non-zero stability score, or null.
+   */
+  function findStableAncestor(el) {
+    let node = el.parentElement;
+    while (node && node !== document.documentElement) {
+      const s = computeStabilityScore(node);
+      if (!s.isUnstable) return { el: node, stability: s };
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   /**
    * Returns the best single-element CSS selector for `el` that is
    * compatible with FullStory's selector syntax.
@@ -37,9 +225,11 @@
   function getBestSelector(el) {
     const tag = el.tagName.toLowerCase();
 
-    // 1. data-* attributes — most stable, FullStory supports all operators on these
+    // 1. data-* attributes — most stable, FullStory supports all operators on these.
+    // Skip attributes whose values are too generic to be unique identifiers
+    // (e.g. data-action="click" matches every clickable element on the page).
     const dataAttrs = Array.from(el.attributes).filter(
-      (a) => a.name.startsWith("data-") && a.value
+      (a) => a.name.startsWith("data-") && a.value && !isGenericAttrValue(a.value)
     );
     if (dataAttrs.length > 0) {
       // Prefer shorter, unique-looking data attrs first
@@ -54,7 +244,12 @@
           a.name.includes("name") ||
           a.name.includes("component")
       ) || dataAttrs[0];
-      return `[${preferred.name}="${preferred.value}"]`;
+      // Prefix with tag.Class when a descriptive class exists — e.g.
+      // button.SubmitForm[data-testid="submit"] — adds human-readable context
+      // and extra specificity without sacrificing stability.
+      const descriptiveClass = Array.from(el.classList).find(isDescriptiveClass);
+      const prefix = descriptiveClass ? `${tag}.${CSS.escape(descriptiveClass)}` : "";
+      return `${prefix}[${preferred.name}="${preferred.value}"]`;
     }
 
     // 2. id — only if it looks stable
@@ -146,7 +341,7 @@
       const targetSel = getBestSelector(targetEl);
 
       // If the target itself has a data-* selector, it's specific enough alone
-      if (targetSel.startsWith("[data-")) {
+      if (targetSel.includes("[data-")) {
         return targetSel;
       }
 
@@ -155,7 +350,7 @@
       // anchors and more useful than the shadow host when they exist
       for (let i = fragment.length - 2; i >= 0; i--) {
         const ancestorSel = getBestSelector(fragment[i]);
-        if (ancestorSel.startsWith("[data-")) {
+        if (ancestorSel.includes("[data-")) {
           return `${ancestorSel} ${targetSel}`;
         }
       }
@@ -577,24 +772,40 @@
       const fragments = buildFragmentsFromElement(el);
       const output = buildOutputSelectors(fragments);
       const inShadow = fragments.length > 1;
+      const stability = computeStabilityScore(el);
+      const raw = getRawSelector(el);
+      const optimized = output ? output.fullstorySelector : `[${attrName}="${value}"]`;
+
+      let stableAncestor = null;
+      if (stability.isUnstable) {
+        const anc = findStableAncestor(el);
+        if (anc) stableAncestor = anc.stability.calculatedSelector;
+      }
 
       if (seen.has(value)) {
         seen.get(value).count++;
       } else {
         seen.set(value, {
-          attrValue:         value,
-          attrName:          attrName,
-          fullstorySelector: output ? output.fullstorySelector : `[${attrName}="${value}"]`,
-          debugPath:         output ? output.debugPath : "",
-          segments:          output ? output.segments : [],
-          count:             1,
-          tagName:           el.tagName.toLowerCase(),
-          inShadow:          inShadow,
+          attrValue:          value,
+          attrName:           attrName,
+          fullstorySelector:  optimized,
+          rawSelector:        raw,
+          debugPath:          output ? output.debugPath : "",
+          segments:           output ? output.segments : [],
+          count:              1,
+          tagName:            el.tagName.toLowerCase(),
+          inShadow:           inShadow,
+          stabilityScore:     stability.score,
+          stabilityTier:      stability.tier,
+          calculatedSelector: stability.calculatedSelector,
+          isUnstable:         stability.isUnstable,
+          stableAncestor,
         });
       }
     }
 
-    return Array.from(seen.values());
+    return Array.from(seen.values())
+      .sort((a, b) => b.stabilityScore - a.stabilityScore);
   }
 
   /**
@@ -629,8 +840,16 @@
     }
 
     return Array.from(attrMap.entries())
-      .map(([attrName, values]) => ({ attrName, valueCount: values.size }))
-      .sort((a, b) => b.valueCount - a.valueCount);
+      .map(([attrName, values]) => {
+        const stabilityWeight = getAttrStabilityWeight(attrName);
+        return {
+          attrName,
+          valueCount: values.size,
+          stabilityWeight,
+          tier: attrWeightToTier(stabilityWeight),
+        };
+      })
+      .sort((a, b) => b.stabilityWeight - a.stabilityWeight || b.valueCount - a.valueCount);
   }
 
   // ─── Page Harvester ──────────────────────────────────────────────────────
@@ -717,19 +936,36 @@
       if (seenInteractive.has(sel)) continue;
       seenInteractive.add(sel);
 
+      const stability = computeStabilityScore(el);
+      const raw = getRawSelector(el);
+      let stableAncestor = null;
+      if (stability.isUnstable) {
+        const anc = findStableAncestor(el);
+        if (anc) stableAncestor = anc.stability.calculatedSelector;
+      }
+
       interactiveCandidates.push({
-        fullstorySelector: sel,
-        debugPath:         output.debugPath,
-        segments:          output.segments,
-        sourceUrl:         url,
-        sourceHostname:    hostname,
-        source:            "interactive",
-        count:             1,
-        tagName:           tag,
-        inShadow:          fragments.length > 1,
+        fullstorySelector:  sel,
+        rawSelector:        raw,
+        debugPath:          output.debugPath,
+        segments:           output.segments,
+        sourceUrl:          url,
+        sourceHostname:     hostname,
+        source:             "interactive",
+        count:              1,
+        tagName:            tag,
+        inShadow:           fragments.length > 1,
+        stabilityScore:     stability.score,
+        stabilityTier:      stability.tier,
+        calculatedSelector: stability.calculatedSelector,
+        isUnstable:         stability.isUnstable,
+        stableAncestor,
         ...getElementSignals(el),
       });
     }
+
+    attrResults.sort((a, b) => (b.stabilityScore || 0) - (a.stabilityScore || 0));
+    interactiveCandidates.sort((a, b) => b.stabilityScore - a.stabilityScore);
 
     return {
       url,

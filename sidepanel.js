@@ -318,6 +318,16 @@ function renderDiscoveryResults(attrs) {
     nameEl.className = "discover-attr-name";
     nameEl.textContent = item.attrName;
 
+    const tierLabels = {
+      1: "T1 — test attribute (data-testid, data-cy …)",
+      2: "T2 — business / data-* attribute",
+      4: "T4 — ARIA attribute (role, aria-label …)",
+    };
+    const tierBadge = document.createElement("span");
+    tierBadge.className = `stability-tier-badge tier-${item.tier || "none"}`;
+    tierBadge.textContent = item.tier ? `T${item.tier}` : "—";
+    tierBadge.title = tierLabels[item.tier] || "Unknown stability tier";
+
     const countEl = document.createElement("span");
     countEl.className = "discover-count-badge";
     countEl.textContent = `${item.valueCount} value${item.valueCount === 1 ? "" : "s"}`;
@@ -348,6 +358,7 @@ function renderDiscoveryResults(attrs) {
     scanBtn.addEventListener("click", (e) => { e.stopPropagation(); triggerDetailScan(); });
 
     row.appendChild(nameEl);
+    row.appendChild(tierBadge);
     row.appendChild(countEl);
     row.appendChild(scanBtn);
     discoverList.appendChild(row);
@@ -437,17 +448,57 @@ function createScanRow(item) {
   row.className = "scan-row";
   row.dataset.attrValue = item.attrValue;
 
-  // Value + shadow badge
-  const valueWrap = document.createElement("span");
+  // Value column: top line (attr value + badges) + selector lines below
+  const valueWrap = document.createElement("div");
   valueWrap.className = "scan-value";
-  valueWrap.textContent = item.attrValue;
-  valueWrap.title = item.fullstorySelector;
+
+  // ── Top line: attribute value + badges ──
+  const valueTop = document.createElement("span");
+  valueTop.className = "scan-value-top";
+  valueTop.textContent = item.attrValue;
+  valueTop.title = item.fullstorySelector;
 
   if (item.inShadow) {
     const shadowBadge = document.createElement("span");
     shadowBadge.className = "scan-shadow-badge";
     shadowBadge.textContent = "shadow";
-    valueWrap.appendChild(shadowBadge);
+    valueTop.appendChild(shadowBadge);
+  }
+
+  if (item.stabilityScore !== undefined) {
+    const pct = Math.round(item.stabilityScore * 100);
+    const scoreBadge = document.createElement("span");
+    scoreBadge.className = `stability-score-badge tier-${item.stabilityTier || "none"}`;
+    scoreBadge.textContent = `${pct}%`;
+    if (item.isUnstable) {
+      scoreBadge.title = item.stableAncestor
+        ? `Unstable — nearest stable ancestor: ${item.stableAncestor}`
+        : "Unstable — no stable ancestor found";
+    } else {
+      scoreBadge.title = `Stability ${pct}% · Tier ${item.stabilityTier}`
+        + (item.calculatedSelector ? ` · ${item.calculatedSelector}` : "");
+    }
+    valueTop.appendChild(scoreBadge);
+  }
+
+  valueWrap.appendChild(valueTop);
+
+  // ── Optimized selector line ──
+  if (item.fullstorySelector) {
+    const optLine = document.createElement("span");
+    optLine.className = "scan-selector-optimized";
+    optLine.textContent = item.fullstorySelector;
+    optLine.title = "Optimized selector";
+    valueWrap.appendChild(optLine);
+  }
+
+  // ── Raw selector line (only when optimization changed something) ──
+  if (item.rawSelector && item.rawSelector !== item.fullstorySelector) {
+    const rawLine = document.createElement("span");
+    rawLine.className = "scan-selector-raw";
+    rawLine.textContent = item.rawSelector;
+    rawLine.title = "Raw selector — before optimization";
+    valueWrap.appendChild(rawLine);
   }
 
   // Tag + count
